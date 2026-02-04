@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { INGREDIENTS, INGREDIENT_CATEGORIES, RECIPES } from './data/gameData';
 import { useProgression } from './systems/useProgression';
 import { useCustomerOrders } from './systems/useCustomerOrders';
@@ -3072,24 +3072,24 @@ const IngredientSVG = ({ type, state, size = 50 }) => {
             </g>
           );
         }
-        // Raw mahi - distinctive golden-green color
+        // Raw mahi - pinkish-white fillet color
         return (
           <g>
             <defs>
               <linearGradient id="mahiRawGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#B8D4A8" />
-                <stop offset="25%" stopColor="#A8C898" />
-                <stop offset="50%" stopColor="#98B888" />
-                <stop offset="75%" stopColor="#88A878" />
-                <stop offset="100%" stopColor="#789868" />
+                <stop offset="0%" stopColor="#F8E8E0" />
+                <stop offset="25%" stopColor="#F0DCD0" />
+                <stop offset="50%" stopColor="#E8D0C4" />
+                <stop offset="75%" stopColor="#DCC4B8" />
+                <stop offset="100%" stopColor="#D0B8AC" />
               </linearGradient>
             </defs>
             <ellipse cx="25" cy="40" rx="18" ry="5" fill="rgba(0,0,0,0.12)" />
-            <ellipse cx="25" cy="25" rx="20" ry="14" fill="url(#mahiRawGrad)" stroke="#688858" strokeWidth="0.8" />
-            <path d="M6,20 Q15,12 25,18 T44,16" stroke="#C8E8B8" strokeWidth="2.5" fill="none" opacity="0.6" />
-            <path d="M8,24 Q18,18 28,24 T42,22" stroke="#B8D8A8" strokeWidth="1.8" fill="none" opacity="0.5" />
-            <ellipse cx="34" cy="18" rx="5" ry="3" fill="#D8F0C8" opacity="0.45" />
-            <ellipse cx="16" cy="28" rx="3" ry="2" fill="#C8E0B8" opacity="0.35" />
+            <ellipse cx="25" cy="25" rx="20" ry="14" fill="url(#mahiRawGrad)" stroke="#B8A090" strokeWidth="0.8" />
+            <path d="M6,20 Q15,12 25,18 T44,16" stroke="#FFF0E8" strokeWidth="2.5" fill="none" opacity="0.6" />
+            <path d="M8,24 Q18,18 28,24 T42,22" stroke="#F0E0D8" strokeWidth="1.8" fill="none" opacity="0.5" />
+            <ellipse cx="34" cy="18" rx="5" ry="3" fill="#FFF8F0" opacity="0.45" />
+            <ellipse cx="16" cy="28" rx="3" ry="2" fill="#F8F0E8" opacity="0.35" />
           </g>
         );
 
@@ -5888,7 +5888,8 @@ export default function CookingGame() {
 
   // Touch handlers for mobile/touchscreen support with haptic feedback
   const handleTouchStart = (e, item, source) => {
-    e.preventDefault();
+    // Note: Don't call preventDefault() here - it causes warnings with passive event listeners
+    // The CSS touch-action: none on draggable elements already prevents default behavior
     const touch = e.touches[0];
 
     // Add haptic feedback if supported (vibration)
@@ -5911,7 +5912,7 @@ export default function CookingGame() {
     if (!touchState) {
       return;
     }
-    e.preventDefault();
+    // Note: Don't call preventDefault() - we use CSS touch-action: none on the workspace instead
     const touch = e.touches[0];
 
     // Check if we've moved enough to consider it a drag (5px threshold)
@@ -5936,7 +5937,7 @@ export default function CookingGame() {
     if (!touchState) {
       return;
     }
-    e.preventDefault();
+    // Note: Don't call preventDefault() - we use CSS touch-action: none on the workspace instead
 
     // Find the element at the touch position
     const touch = e.changedTouches[0];
@@ -5987,9 +5988,17 @@ export default function CookingGame() {
     }
     const item =
       draggedItem.source === 'pantry' ? createItem(draggedItem.type) : { ...draggedItem };
+
+    // Store original source in case we need to return the item
+    const originalSource = draggedItem.source;
+    const originalItem = { ...draggedItem };
+
     if (draggedItem.source !== 'pantry') {
       removeFromAllStations(draggedItem.id);
     }
+
+    // Track if item was successfully placed
+    let itemPlaced = true;
 
     switch (target) {
       case 'cuttingBoard':
@@ -6114,7 +6123,40 @@ export default function CookingGame() {
           ]);
         }
         break;
+      default:
+        // Invalid drop target - item wasn't placed
+        itemPlaced = false;
+        break;
     }
+
+    // If item wasn't placed and came from a station (not pantry), return it to original location
+    if (!itemPlaced && originalSource !== 'pantry') {
+      switch (originalSource) {
+        case 'plate':
+          setPlateItems((prev) => [...prev, originalItem]);
+          break;
+        case 'cuttingBoard':
+          setCuttingBoardItems((prev) => [...prev, originalItem]);
+          break;
+        case 'mixingBowl':
+          setMixingBowlItems((prev) => [...prev, originalItem]);
+          break;
+        case 'pot':
+          setPotItems((prev) => [...prev, originalItem]);
+          break;
+        case 'pan':
+          setPanItems((prev) => [...prev, originalItem]);
+          break;
+        case 'sink':
+          setSinkItems((prev) => [...prev, originalItem]);
+          break;
+        case 'workspace':
+          setActiveItems((prev) => [...prev, originalItem]);
+          break;
+      }
+      showNotification('Invalid drop location - item returned', 'error');
+    }
+
     setDraggedItem(null);
   };
 
@@ -6557,10 +6599,31 @@ export default function CookingGame() {
   const renderDraggableIngredient = (item, source, size = 45) => {
     const isSelected = tapToSelect.isSelected(item);
 
+    // Determine the appropriate title/label based on item type
+    const getItemLabel = () => {
+      if (item.type === 'completedDish') return item.recipe?.name || 'Completed Dish';
+      if (item.type === 'sushiRoll') return 'Sushi Roll';
+      if (item.type === 'mixedBowl') return 'Mixed Ingredients';
+      return `${INGREDIENTS[item.type]?.name || item.type} (${item.state})`;
+    };
+
+    // Render the appropriate visual for the item type
+    const renderItemVisual = () => {
+      if (item.type === 'completedDish') {
+        return <CompletedDishVisual recipeId={item.recipeId} size={size} />;
+      }
+      if (item.type === 'sushiRoll') {
+        return <SushiRollVisual ingredients={item.ingredients} />;
+      }
+      if (item.type === 'mixedBowl') {
+        return <MixedIngredientsVisual items={item.items} />;
+      }
+      return <IngredientSVG type={item.type} state={item.state} size={size} />;
+    };
+
     return (
-      <SelectionIndicator visible={isSelected} size="normal" color="amber">
+      <SelectionIndicator key={item.id || item.type} visible={isSelected} size="normal" color="amber">
         <div
-          key={item.id || item.type}
           draggable
           onDragStart={(e) => handleDragStart(e, item, source)}
           onTouchStart={(e) => handleTouchStart(e, item, source)}
@@ -6580,9 +6643,9 @@ export default function CookingGame() {
             minHeight: '44px',
             WebkitTapHighlightColor: 'transparent',
           }}
-          title={`${INGREDIENTS[item.type]?.name} (${item.state})`}
+          title={getItemLabel()}
           role="button"
-          aria-label={`${INGREDIENTS[item.type]?.name}, ${item.state}. ${isTouchActive ? 'Tap to select or drag to move.' : 'Drag to move.'}`}
+          aria-label={`${getItemLabel()}. ${isTouchActive ? 'Tap to select or drag to move.' : 'Drag to move.'}`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -6591,7 +6654,7 @@ export default function CookingGame() {
             }
           }}
         >
-          <IngredientSVG type={item.type} state={item.state} size={size} />
+          {renderItemVisual()}
         </div>
       </SelectionIndicator>
     );
@@ -6948,6 +7011,7 @@ export default function CookingGame() {
           <div
             className="flex-1 relative"
             data-drop-zone="workspace"
+            style={{ touchAction: 'none' }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => handleDrop(e, 'workspace')}
             onTouchMove={handleTouchMove}
@@ -7770,14 +7834,32 @@ export default function CookingGame() {
                 key={item.id}
                 draggable
                 onDragStart={(e) => handleDragStart(e, item, 'workspace')}
-                className="absolute cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
+                onClick={() => {
+                  // Allow serving staged completed dishes when restaurant is open
+                  if (item.type === 'completedDish' && restaurantMode) {
+                    handleServeDish(item.recipe);
+                    setActiveItems((prev) => prev.filter((i) => i.id !== item.id));
+                  }
+                }}
+                className={`absolute cursor-grab active:cursor-grabbing hover:scale-110 transition-transform ${
+                  item.type === 'completedDish' && restaurantMode ? 'cursor-pointer ring-2 ring-green-400 ring-opacity-50 rounded-full animate-pulse' : ''
+                }`}
                 style={{
                   left: item.x,
                   top: item.y,
                   filter: 'drop-shadow(3px 4px 5px rgba(0,0,0,0.3))',
                 }}
+                title={item.type === 'completedDish' ? `${item.recipe?.name || 'Dish'} - ${restaurantMode ? 'Click to serve!' : 'Staged for service'}` : undefined}
               >
-                <IngredientSVG type={item.type} state={item.state} size={55} />
+                {item.type === 'completedDish' ? (
+                  <CompletedDishVisual recipeId={item.recipeId} size={55} />
+                ) : item.type === 'sushiRoll' ? (
+                  <SushiRollVisual ingredients={item.ingredients} />
+                ) : item.type === 'mixedBowl' ? (
+                  <MixedIngredientsVisual items={item.items} />
+                ) : (
+                  <IngredientSVG type={item.type} state={item.state} size={55} />
+                )}
               </div>
             ))}
           </div>
